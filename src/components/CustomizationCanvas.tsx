@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { CircularRegion, TextLayer, ViewDesign } from "@/types/product";
+import type { EllipticalRegion, TextLayer, ViewDesign } from "@/types/product";
 
 type FabricModule = typeof import("fabric");
 type FabricCanvas = InstanceType<FabricModule["Canvas"]>;
@@ -10,9 +10,8 @@ type FabricTextWithId = FabricTextbox & { id: string };
 
 type CustomizationCanvasProps = {
   design: ViewDesign;
-  region: CircularRegion;
+  region: EllipticalRegion;
   templateSize: number;
-  designSize: number;
   selectedTextId: string | null;
   onSelectionChange: (textId: string | null) => void;
   onTextChange: (textId: string, patch: Partial<TextLayer>) => void;
@@ -22,7 +21,6 @@ export default function CustomizationCanvas({
   design,
   region,
   templateSize,
-  designSize,
   selectedTextId,
   onSelectionChange,
   onTextChange,
@@ -62,15 +60,17 @@ export default function CustomizationCanvas({
       const image = await fabric.FabricImage.fromURL(design.imageSrc, {
         crossOrigin: "anonymous",
       });
-      const scale = Math.max(designSize / image.width, designSize / image.height);
+      const scale = Math.max(region.width / image.width, region.height / image.height);
 
       if (applyTokenRef.current !== applyToken) {
         return;
       }
 
       image.set({
-        left: designSize / 2,
-        top: designSize / 2,
+        left: region.x,
+        top: region.y,
+        angle: region.angle,
+        skewY: region.skewY,
         originX: "center",
         originY: "center",
         scaleX: scale,
@@ -80,7 +80,7 @@ export default function CustomizationCanvas({
       });
       canvas.backgroundImage = image;
     } catch {
-      canvas.backgroundColor = "#f8fafc";
+      canvas.backgroundColor = "";
     }
 
     designRef.current = design;
@@ -93,9 +93,10 @@ export default function CustomizationCanvas({
           top: text.y,
           originX: "center",
           originY: "center",
-          angle: text.rotation,
+          angle: region.angle + text.rotation,
+          skewY: region.skewY,
           opacity: text.opacity,
-          width: designSize * 0.82,
+          width: Math.min(region.width, region.height) * 0.82,
           textAlign: text.textAlign,
           fontFamily: text.fontFamily,
           fontSize: text.fontSize,
@@ -122,7 +123,7 @@ export default function CustomizationCanvas({
       canvas.setActiveObject(selectedTextObject);
       canvas.requestRenderAll();
     }
-  }, [design, designKey, designSize]);
+  }, [design, designKey, region]);
 
   useEffect(() => {
     let cancelled = false;
@@ -142,27 +143,31 @@ export default function CustomizationCanvas({
         preserveObjectStacking: true,
       });
 
+      canvas.clipPath = new fabric.Ellipse({
+        left: region.x,
+        top: region.y,
+        rx: region.width / 2,
+        ry: region.height / 2,
+        angle: region.angle,
+        originX: "center",
+        originY: "center",
+      });
+
       const updateCanvasSize = () => {
-        const cssSize = Math.min(container.clientWidth, container.clientHeight);
+        const cssWidth = container.clientWidth;
+        const cssHeight = container.clientHeight;
         const devicePixelRatio = Math.min(window.devicePixelRatio || 1, 2);
 
-        if (cssSize <= 0) {
+        if (cssWidth <= 0 || cssHeight <= 0) {
           return;
         }
 
         canvas.setDimensions(
-          { width: cssSize * devicePixelRatio, height: cssSize * devicePixelRatio },
+          { width: cssWidth * devicePixelRatio, height: cssHeight * devicePixelRatio },
           { backstoreOnly: true },
         );
-        canvas.setDimensions({ width: cssSize, height: cssSize }, { cssOnly: true });
-        canvas.setZoom((cssSize * devicePixelRatio) / designSize);
-        canvas.clipPath = new fabric.Circle({
-          left: designSize / 2,
-          top: designSize / 2,
-          radius: designSize / 2,
-          originX: "center",
-          originY: "center",
-        });
+        canvas.setDimensions({ width: cssWidth, height: cssHeight }, { cssOnly: true });
+        canvas.setZoom((cssWidth * devicePixelRatio) / templateSize);
         canvas.requestRenderAll();
       };
 
@@ -232,13 +237,13 @@ export default function CustomizationCanvas({
         const scaleFactor = Math.max(textObject.scaleX ?? 1, textObject.scaleY ?? 1);
         const nextLeft = Math.round(textObject.left ?? 0);
         const nextTop = Math.round(textObject.top ?? 0);
-        const nextRotation = Math.round(textObject.angle ?? 0);
+        const nextRotation = Math.round((textObject.angle ?? 0) - region.angle);
         const nextFontSize = Math.max(10, Math.round((textObject.fontSize ?? 24) * scaleFactor));
 
         textObject.set({
           left: nextLeft,
           top: nextTop,
-          angle: nextRotation,
+          angle: region.angle + nextRotation,
           fontSize: nextFontSize,
           scaleX: 1,
           scaleY: 1,
@@ -267,7 +272,7 @@ export default function CustomizationCanvas({
       fabricRef.current = null;
       void canvas?.dispose();
     };
-  }, [designSize, onSelectionChange, onTextChange]);
+  }, [region, onSelectionChange, onTextChange, templateSize]);
 
   useEffect(() => {
     if (!isReady || appliedDesignKeyRef.current === designKey) {
@@ -286,15 +291,8 @@ export default function CustomizationCanvas({
     }
   }, [isReady, selectedTextId]);
 
-  const canvasStyle = {
-    left: `${((region.x - region.size / 2) / templateSize) * 100}%`,
-    top: `${((region.y - region.size / 2) / templateSize) * 100}%`,
-    width: `${(region.size / templateSize) * 100}%`,
-    height: `${(region.size / templateSize) * 100}%`,
-  };
-
   return (
-    <div ref={containerRef} className="customization-canvas" style={canvasStyle}>
+    <div ref={containerRef} className="customization-canvas">
       <canvas ref={canvasElementRef} aria-label="商品定制画布" />
     </div>
   );

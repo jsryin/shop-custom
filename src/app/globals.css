@@ -148,6 +148,7 @@ a:focus-visible {
 
 .customization-canvas {
   position: absolute;
+  inset: 0;
   touch-action: none;
 }
 
@@ -156,13 +157,6 @@ a:focus-visible {
   inset: 0 !important;
   width: 100% !important;
   height: 100% !important;
-  overflow: hidden;
-  border-radius: 50%;
-  clip-path: circle(50% at 50% 50%);
-}
-
-.customization-canvas canvas {
-  border-radius: 50%;
 }
 
 .text-layers {

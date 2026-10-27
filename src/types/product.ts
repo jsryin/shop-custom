@@ -1,10 +1,16 @@
-export type CircularRegion = {
-  /** 画布中心在商品模板图内的横坐标 */
+export type EllipticalRegion = {
+  /** 椭圆中心在商品模板图内的横坐标 */
   x: number;
-  /** 画布中心在商品模板图内的纵坐标 */
+  /** 椭圆中心在商品模板图内的纵坐标 */
   y: number;
-  /** 圆形定制区直径，单位与商品模板图保持一致 */
-  size: number;
+  /** 椭圆水平轴长度，单位与商品模板图保持一致 */
+  width: number;
+  /** 椭圆垂直轴长度，单位与商品模板图保持一致 */
+  height: number;
+  /** 椭圆旋转角度，单位为度 */
+  angle: number;
+  /** 图案与文字的右倾透视强度，单位为度 */
+  skewY: number;
 };
 
 export type ImagePreset = {
@@ -20,7 +26,7 @@ export type ProductView = {
   templateSrc: string;
   /** 商品模板图的边长，用于把定制区映射为百分比 */
   templateSize: number;
-  region: CircularRegion;
+  region: EllipticalRegion;
   presets: ImagePreset[];
 };
 

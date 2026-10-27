@@ -117,7 +117,7 @@ export default function ProductCustomizer({ product }: { product: Product }) {
   };
 
   const handleAddText = () => {
-    const newText = createDefaultText(activeView.region.size / 2, activeView.region.size / 2);
+    const newText = createDefaultText(activeView.region.x, activeView.region.y);
     updateActiveDesign((design) => ({ ...design, texts: [...design.texts, newText] }));
     setSelectedTextId(newText.id);
   };
@@ -178,10 +178,10 @@ export default function ProductCustomizer({ product }: { product: Product }) {
         <div className="preview-stage">
           <div className="preview-canvas-wrap">
             <CustomizationCanvas
+              key={activeView.id}
               design={activeDesign}
               region={activeView.region}
               templateSize={activeView.templateSize}
-              designSize={activeView.region.size}
               selectedTextId={selectedTextId}
               onSelectionChange={handleSelectionChange}
               onTextChange={handleTextChange}
