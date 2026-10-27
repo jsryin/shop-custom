@@ -59,6 +59,15 @@ export type TextLayer = TextStyle & {
   rotation: number;
 };
 
+export type ViewSvgExport = {
+  fileName: string;
+  svg: string;
+};
+
+export type SvgExportController = {
+  exportSvg: (fileName: string) => Promise<ViewSvgExport | null>;
+};
+
 export type ViewDesign = {
   imagePresetId: string | null;
   imageSrc: string;

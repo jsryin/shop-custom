@@ -47,7 +47,7 @@ export const product: Product = {
       label: "背面",
       templateSrc: "/products/back-template.png",
       templateSize: 800,
-      region: { x: 395, y: 324, width: 365, height: 370, angle: 13, skewY: 10 },
+      region: { x: 400, y: 324, width: 365, height: 370, angle: 0, skewY: 0 },
       presets: [...presets],
     },
   ],

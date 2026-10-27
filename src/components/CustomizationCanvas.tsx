@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { EllipticalRegion, TextLayer, ViewDesign } from "@/types/product";
+import type { EllipticalRegion, TextLayer, SvgExportController, ViewDesign, ViewSvgExport } from "@/types/product";
+import { createDesignText, createRegionClipPath, loadDesignImage } from "@/lib/fabric-design";
 
 type FabricModule = typeof import("fabric");
 type FabricCanvas = InstanceType<FabricModule["Canvas"]>;
@@ -9,21 +10,25 @@ type FabricTextbox = InstanceType<FabricModule["Textbox"]>;
 type FabricTextWithId = FabricTextbox & { id: string };
 
 type CustomizationCanvasProps = {
+  viewId: string;
   design: ViewDesign;
   region: EllipticalRegion;
   templateSize: number;
   selectedTextId: string | null;
   onSelectionChange: (textId: string | null) => void;
   onTextChange: (textId: string, patch: Partial<TextLayer>) => void;
+  registerCanvas?: (viewId: string, canvas: SvgExportController | null) => void;
 };
 
 export default function CustomizationCanvas({
+  viewId,
   design,
   region,
   templateSize,
   selectedTextId,
   onSelectionChange,
   onTextChange,
+  registerCanvas,
 }: CustomizationCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasElementRef = useRef<HTMLCanvasElement>(null);
@@ -35,11 +40,74 @@ export default function CustomizationCanvas({
   const applyTokenRef = useRef(0);
   const appliedDesignKeyRef = useRef("");
   const [isReady, setIsReady] = useState(false);
+  const exportedSvgRef = useRef<ViewSvgExport | null>(null);
   const designKey = useMemo(() => JSON.stringify(design), [design]);
+
+  useEffect(() => {
+    designRef.current = design;
+    exportedSvgRef.current = null;
+  }, [design, region, templateSize]);
 
   useEffect(() => {
     selectedTextIdRef.current = selectedTextId;
   }, [selectedTextId]);
+
+  const buildSvgExport = useCallback(
+    async (fileName: string) => {
+      const canvas = canvasRef.current;
+      const fabric = fabricRef.current;
+      const sourceDesign = designRef.current;
+
+      if (!canvas || !fabric) {
+        return null;
+      }
+
+      if (exportedSvgRef.current?.fileName === fileName) {
+        return exportedSvgRef.current;
+      }
+
+      const exportCanvas = new fabric.StaticCanvas(undefined, {
+        width: templateSize,
+        height: templateSize,
+        renderOnAddRemove: false,
+      });
+
+      exportCanvas.viewportTransform = [1, 0, 0, 1, 0, 0];
+      exportCanvas.clipPath = createRegionClipPath(fabric, region);
+
+      try {
+        exportCanvas.backgroundImage = await loadDesignImage(
+          fabric,
+          sourceDesign.imageSrc,
+          region,
+          true,
+        );
+      } catch {
+        exportCanvas.backgroundColor = "";
+      }
+
+      sourceDesign.texts.forEach((text) => {
+        exportCanvas.add(createDesignText(fabric, text, region));
+      });
+
+      let svg: string;
+
+      try {
+        svg = exportCanvas.toSVG({
+          suppressPreamble: true,
+          viewBox: { x: 0, y: 0, width: templateSize, height: templateSize },
+        });
+      } finally {
+        void exportCanvas.dispose();
+      }
+
+      const exportData: ViewSvgExport = { fileName, svg };
+      exportedSvgRef.current = exportData;
+
+      return exportData;
+    },
+    [region, templateSize],
+  );
 
   const applyDesign = useCallback(async () => {
     const canvas = canvasRef.current;
@@ -53,75 +121,45 @@ export default function CustomizationCanvas({
     const pendingDesignKey = designKey;
     const pendingSelectedTextId = selectedTextIdRef.current;
     isApplyingDesignRef.current = true;
-    canvas.clear();
-    canvas.backgroundImage = undefined;
 
     try {
-      const image = await fabric.FabricImage.fromURL(design.imageSrc, {
-        crossOrigin: "anonymous",
-      });
-      const scale = Math.max(region.width / image.width, region.height / image.height);
+      canvas.clear();
+      canvas.backgroundImage = undefined;
 
-      if (applyTokenRef.current !== applyToken) {
+      try {
+        canvas.backgroundImage = await loadDesignImage(fabric, design.imageSrc, region);
+      } catch {
+        canvas.backgroundColor = "";
+      }
+
+      // 连续切换样式时，只允许最后一次请求写入画布。
+      if (applyToken !== applyTokenRef.current) {
         return;
       }
 
-      image.set({
-        left: region.x,
-        top: region.y,
-        angle: region.angle,
-        skewY: region.skewY,
-        originX: "center",
-        originY: "center",
-        scaleX: scale,
-        scaleY: scale,
-        selectable: false,
-        evented: false,
+      designRef.current = design;
+
+      design.texts.forEach((text) => {
+        const textObject = createDesignText(fabric, text, region);
+        Object.assign(textObject, { id: text.id });
+        canvas.add(textObject);
       });
-      canvas.backgroundImage = image;
-    } catch {
-      canvas.backgroundColor = "";
-    }
 
-    designRef.current = design;
-
-    design.texts.forEach((text) => {
-      const textObject = new fabric.Textbox(
-        text.uppercase ? text.content.toLocaleUpperCase() : text.content,
-        {
-          left: text.x,
-          top: text.y,
-          originX: "center",
-          originY: "center",
-          angle: region.angle + text.rotation,
-          skewY: region.skewY,
-          opacity: text.opacity,
-          width: Math.min(region.width, region.height) * 0.82,
-          textAlign: text.textAlign,
-          fontFamily: text.fontFamily,
-          fontSize: text.fontSize,
-          fontWeight: text.fontWeight,
-          fontStyle: text.fontStyle,
-          underline: text.underline,
-          fill: text.color,
-          padding: 2,
-        },
-      );
-      Object.assign(textObject, { id: text.id });
-      canvas.add(textObject);
-    });
-
-    canvas.requestRenderAll();
-    appliedDesignKeyRef.current = pendingDesignKey;
-    isApplyingDesignRef.current = false;
-
-    const selectedTextObject = canvas
-      .getObjects()
-      .find((item) => (item as FabricTextWithId).id === pendingSelectedTextId);
-
-    if (selectedTextObject) {
-      canvas.setActiveObject(selectedTextObject);
       canvas.requestRenderAll();
+      appliedDesignKeyRef.current = pendingDesignKey;
+
+      const selectedTextObject = canvas
+        .getObjects()
+        .find((item) => (item as FabricTextWithId).id === pendingSelectedTextId);
+
+      if (selectedTextObject) {
+        canvas.setActiveObject(selectedTextObject);
+        canvas.requestRenderAll();
+      }
+    } finally {
+      if (applyToken === applyTokenRef.current) {
+        isApplyingDesignRef.current = false;
+      }
     }
   }, [design, designKey, region]);
 
@@ -143,15 +181,7 @@ export default function CustomizationCanvas({
         preserveObjectStacking: true,
       });
 
-      canvas.clipPath = new fabric.Ellipse({
-        left: region.x,
-        top: region.y,
-        rx: region.width / 2,
-        ry: region.height / 2,
-        angle: region.angle,
-        originX: "center",
-        originY: "center",
-      });
+      canvas.clipPath = createRegionClipPath(fabric, region);
 
       const updateCanvasSize = () => {
         const cssWidth = container.clientWidth;
@@ -187,6 +217,7 @@ export default function CustomizationCanvas({
 
       fabricRef.current = fabric;
       canvasRef.current = canvas;
+      registerCanvas?.(viewId, { exportSvg: (fileName) => buildSvgExport(fileName) });
       updateCanvasSize();
       setIsReady(true);
 
@@ -270,9 +301,10 @@ export default function CustomizationCanvas({
       const canvas = canvasRef.current;
       canvasRef.current = null;
       fabricRef.current = null;
+      registerCanvas?.(viewId, null);
       void canvas?.dispose();
     };
-  }, [region, onSelectionChange, onTextChange, templateSize]);
+  }, [buildSvgExport, onSelectionChange, onTextChange, registerCanvas, region, templateSize, viewId]);
 
   useEffect(() => {
     if (!isReady || appliedDesignKeyRef.current === designKey) {

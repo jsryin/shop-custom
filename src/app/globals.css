@@ -146,6 +146,16 @@ a:focus-visible {
   user-select: none;
 }
 
+.view-canvas {
+  position: absolute;
+  inset: 0;
+}
+
+.view-canvas.is-hidden {
+  visibility: hidden;
+  pointer-events: none;
+}
+
 .customization-canvas {
   position: absolute;
   inset: 0;
@@ -432,7 +442,12 @@ a:focus-visible {
   line-height: 1.8;
 }
 
-.cart-message {
+.purchase-button:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.export-message {
   margin: 10px 0 0;
   color: #166534;
   font-size: 13px;

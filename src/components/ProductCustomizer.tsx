@@ -5,8 +5,9 @@ import CustomizationCanvas from "@/components/CustomizationCanvas";
 import ImageStylePicker from "@/components/ImageStylePicker";
 import TextControls from "@/components/TextControls";
 import { createDefaultText, getDesignSummary } from "@/lib/design";
+import { downloadSvg } from "@/lib/download";
 import { formatPrice } from "@/lib/product";
-import type { ImagePreset, Product, TextLayer, TextStyle, ViewDesign } from "@/types/product";
+import type { ImagePreset, Product, TextLayer, TextStyle, ViewDesign, SvgExportController } from "@/types/product";
 
 const maximumImageSize = 8 * 1024 * 1024;
 
@@ -33,9 +34,20 @@ export default function ProductCustomizer({ product }: { product: Product }) {
     createInitialDesigns(product),
   );
   const [selectedTextId, setSelectedTextId] = useState<string | null>(null);
-  const [cartMessage, setCartMessage] = useState("");
+  const [exportMessage, setExportMessage] = useState("");
+  const [isExporting, setIsExporting] = useState(false);
   const activeViewIdRef = useRef(activeViewId);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const canvasRefs = useRef<Record<string, SvgExportController>>({});
+
+  const registerCanvas = useCallback((viewId: string, canvas: SvgExportController | null) => {
+    if (canvas) {
+      canvasRefs.current[viewId] = canvas;
+    } else {
+      delete canvasRefs.current[viewId];
+    }
+  }, []);
 
   const activeView = product.views.find((view) => view.id === activeViewId) ?? product.views[0];
   const activeDesign = designs[activeView.id];
@@ -72,6 +84,35 @@ export default function ProductCustomizer({ product }: { product: Product }) {
     [updateActiveDesign],
   );
 
+  const handleExportSvg = async () => {
+    setIsExporting(true);
+
+    try {
+      const viewExports = await Promise.all(
+        product.views.map(async (view) => {
+          const canvas = canvasRefs.current[view.id];
+          return canvas?.exportSvg(`${product.slug}-${view.id}.svg`) ?? null;
+        }),
+      );
+
+      if (viewExports.some((exportData) => !exportData)) {
+        setExportMessage("画布尚未就绪，请稍后重试。");
+        return;
+      }
+
+      viewExports.forEach((exportData) => {
+        if (exportData) {
+          downloadSvg(exportData.svg, exportData.fileName);
+        }
+      });
+      setExportMessage("正面与背面 SVG 已导出。");
+    } catch {
+      setExportMessage("SVG 导出失败，请重试。");
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   const handleViewChange = (viewId: string) => {
     activeViewIdRef.current = viewId;
     setActiveViewId(viewId);
@@ -95,12 +136,12 @@ export default function ProductCustomizer({ product }: { product: Product }) {
     }
 
     if (!file.type.startsWith("image/")) {
-      setCartMessage("请选择图片文件。");
+      setExportMessage("请选择图片文件。");
       return;
     }
 
     if (file.size > maximumImageSize) {
-      setCartMessage("图片不能超过 8 MB。");
+      setExportMessage("图片不能超过 8 MB。");
       return;
     }
 
@@ -111,7 +152,7 @@ export default function ProductCustomizer({ product }: { product: Product }) {
         imagePresetId: null,
         imageSrc: String(reader.result),
       }));
-      setCartMessage("");
+      setExportMessage("");
     };
     reader.readAsDataURL(file);
   };
@@ -177,15 +218,23 @@ export default function ProductCustomizer({ product }: { product: Product }) {
 
         <div className="preview-stage">
           <div className="preview-canvas-wrap">
-            <CustomizationCanvas
-              key={activeView.id}
-              design={activeDesign}
-              region={activeView.region}
-              templateSize={activeView.templateSize}
-              selectedTextId={selectedTextId}
-              onSelectionChange={handleSelectionChange}
-              onTextChange={handleTextChange}
-            />
+            {product.views.map((view) => (
+              <div
+                key={view.id}
+                className={`view-canvas${view.id === activeView.id ? "" : " is-hidden"}`}
+              >
+                <CustomizationCanvas
+                  viewId={view.id}
+                  design={designs[view.id]}
+                  region={view.region}
+                  templateSize={view.templateSize}
+                  selectedTextId={selectedTextId}
+                  onSelectionChange={handleSelectionChange}
+                  onTextChange={handleTextChange}
+                  registerCanvas={registerCanvas}
+                />
+              </div>
+            ))}
             <img
               className="preview-template"
               src={activeView.templateSrc}
@@ -216,7 +265,7 @@ export default function ProductCustomizer({ product }: { product: Product }) {
         </div>
       </section>
 
-      <aside className="editor-panel" aria-label="定制工具">
+      <aside className="editor-panel" aria-label="定制与导出">
         <div className="panel-block">
           <h2>图片样式</h2>
           <ImageStylePicker
@@ -262,16 +311,17 @@ export default function ProductCustomizer({ product }: { product: Product }) {
           <button
             type="button"
             className="purchase-button"
-            onClick={() => setCartMessage("定制信息已生成，可接入购物车接口。")}
+            onClick={handleExportSvg}
+            disabled={isExporting}
           >
-            加入购物车
+            {isExporting ? "正在导出..." : "导出 SVG"}
           </button>
           <ul className="design-summary">
             {summary.map((item) => (
               <li key={item}>{item}</li>
             ))}
           </ul>
-          {cartMessage ? <p className="cart-message">{cartMessage}</p> : null}
+          {exportMessage ? <p className="export-message">{exportMessage}</p> : null}
         </div>
       </aside>
     </div>
